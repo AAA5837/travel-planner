@@ -1,0 +1,6 @@
+run = "npm start"
+entrypoint = "server.js"
+modules = ["nodejs-18"]
+
+[env]
+NODE_ENV = "production"
