@@ -1,0 +1,15 @@
+{
+  "name": "travel-planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "双人实时协作旅行计划工作台（行程规划 + 地图路线 + 图文/小红书 + 讨论）",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

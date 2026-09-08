@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: travel-planner
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: AMAP_KEY
+        sync: false

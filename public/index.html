@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>双人旅行计划台</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🧭 双人旅行计划台</div>
+    <div class="trip-switch">
+      <select id="tripSelect" title="切换旅行"></select>
+      <button id="newTrip" class="btn-mini" title="新建旅行">+ 旅行</button>
+      <button id="delTrip" class="btn-mini btn-danger" title="删除当前旅行">删</button>
+    </div>
+    <div class="right">
+      <div class="presence" id="presence" title="在线旅伴"></div>
+      <div class="me">
+        <span class="me-dot" id="meDot"></span>
+        <span id="meName">我</span>
+        <button id="editName" class="btn-mini">改名</button>
+      </div>
+      <div class="backup-btns">
+        <button id="exportBtn" class="btn-mini" title="下载行程备份到本机">⬇ 备份</button>
+        <button id="importBtn" class="btn-mini" title="从备份文件恢复行程">⬆ 恢复</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none" />
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" id="panel"></section>
+
+    <section class="mapwrap">
+      <div class="map-controls">
+        <div class="view-row">
+          <div class="seg" id="viewSeg"></div>
+        </div>
+        <div class="tool-row">
+          <select id="addDaySelect" class="sel" title="添加到哪一天"></select>
+          <button id="pickBtn" class="btn">📍 地图选点添加</button>
+        </div>
+        <div class="search-row">
+          <input id="searchInput" class="inp" placeholder="搜地点（如：故宫 / 外滩）" />
+          <button id="searchBtn" class="btn">搜索</button>
+          <div id="searchResults" class="search-results"></div>
+        </div>
+      </div>
+      <div id="map"></div>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="app.js"></script>
+</body>
+</html>
