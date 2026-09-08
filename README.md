@@ -55,45 +55,39 @@ AMAP_KEY=你的高德Key npm start
 
 ---
 
-## 四、让两人异地也能用（公网访问）
+## 四、部署到 Render（永久公网地址 · 推荐）
 
-本工具是「前端 + Node 后端（WebSocket 实时同步 + JSON 数据库）」，要两人不同网络协作，必须有一个公网可访问的地址。三种方式：
+> 前提：代码必须先在一个 **GitHub 仓库** 里（Render 从 Git 拉取，不支持直接上传文件夹）。你需要一个 GitHub 账号 + 一个 Render 账号，均为免费。
 
-### 方式 A：临时隧道（最快，session 级）
-在本机执行（任选其一，均免账号）：
-```bash
-# serveo（免密钥，推荐）
-ssh -R 80:localhost:3000 serveo.net
-# 或 localhost.run（需先生成并添加 SSH 公钥到其账号）
-ssh -R 80:localhost:3000 ssh.localhost.run
-```
-终端会给出一个 `https://xxxx` 公网地址，两人手机打开即用。隧道随本机/会话结束失效。
+**第 1 步：把代码推到 GitHub（你来做）**
+1. 注册/登录 GitHub（https://github.com）。
+2. 新建一个**空仓库**（不要勾选 README / .gitignore），例如 `travel-planner`。
+3. 在本项目目录执行（把 URL 换成你自己的仓库地址）：
+   ```bash
+   git remote add origin https://github.com/你的用户名/travel-planner.git
+   git push -u origin main
+   ```
+   > 首次 push 需要 GitHub 认证：本地有 SSH key 就用 SSH 地址；否则用 HTTPS 并按提示输入「用户名 + 个人访问令牌（token，不是账号密码）」。
 
-### 方式 B：部署到 Railway（永久、免费额度）
-1. 把本目录推到 GitHub 仓库；
-2. 打开 https://railway.app → New Project → 选该仓库；
-3. 在 Variables 里加 `AMAP_KEY`（可选）；
-4. 部署完成会得到一个永久 `https://xxx.up.railway.app` 地址。
-（已附 `package.json` 与 `Procfile`，Railway 会自动识别 `npm start`。）
+**第 2 步：在 Render 一键部署（你来做）**
+1. 注册/登录 Render（https://render.com）。
+2. 右上角 **New → Blueprint**，授权连接你的 GitHub，选择 `travel-planner` 仓库。
+3. Render 会读取本项目的 `render.yaml` 自动建好 Web Service（无需手填 Build/Start 命令）。
+4. 可选：在 Environment 里加 `AMAP_KEY`（高德 Key，不填也能跑，只是路线精度低一些）。
+5. 点 **Deploy**，约 1–2 分钟后得到永久地址：`https://travel-planner-xxxx.onrender.com`，两人手机打开即用。
 
-### 方式 C：部署到 Render（永久、免费额度）
-1. 推到 GitHub；
-2. 打开 https://render.com → New → Web Service → 选仓库；
-3. Build Command `npm install`，Start Command `node server.js`；
-4. 在 Environment 里加 `AMAP_KEY`（可选）；
-5. 部署后得到永久地址。
-（已附 `render.yaml`，可直接 "Blueprint" 导入。）
+**临时隧道（session 级，最快但不持久）**
+如果不想注册账号，本机执行 `ssh -R 80:localhost:3000 serveo.net`（免密钥）即可拿到一个 `https://xxxx` 临时公网地址。缺点：地址会过期、有英文警告页，仅适合临时演示。
 
 ---
 
-## 五、数据存储与备份
+## 五、数据存储、备份与恢复
 
 - 所有行程存在 `data/db.json`（JSON 文件），修改即时落盘。
-- **备份**：直接复制 `data/db.json` 即可。
-- **注意**：Railway / Render 免费实例的磁盘通常是**临时**的，重启或重新部署可能清空本地文件。如需行程长期保存，建议：
-  - 用平台的「Volume / 持久盘」把 `data/` 挂上去；或
-  - 定期把 `data/db.json` 下载备份。
-- 本 session 内通过隧道访问时，数据就存在这个运行实例里，正常保存。
+- **⚠️ 重要：Render / Railway 免费实例的磁盘是临时的**，每次重新部署或实例重建都会清空 `data/`，行程数据会丢。两种应对方式（推荐组合使用）：
+  1. **用界面上的「⬇ 备份 / ⬆ 恢复」按钮**：点「⬇ 备份」把全部行程下载成 JSON 存到手机/电脑；要恢复时点「⬆ 恢复」选该文件即可。重新部署前记得备份一次。
+  2. **挂持久盘（Render 付费 plan 支持）**：给该服务挂一个 Disk 并挂载到 `/data`，把 `data/` 指向它，可彻底持久化（需要改少量配置，需要时可帮你做）。
+- 本 session 内通过隧道访问时，数据就存在运行实例里，正常保存，无需备份。
 
 ---
 

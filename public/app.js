@@ -41,17 +41,21 @@ let ME = loadMe();
 function saveMe() { localStorage.setItem('tp_me', JSON.stringify(ME)); }
 
 /* ---------------- websocket ---------------- */
-const WS = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-function mutate(action, payload) { WS.send(JSON.stringify({ type: 'mutate', action, payload, actor: ME.name })); }
-WS.onopen = () => WS.send(JSON.stringify({ type: 'hello', name: ME.name, color: ME.color }));
-WS.onmessage = (e) => {
-  let m; try { m = JSON.parse(e.data); } catch { return; }
-  if (m.type === 'welcome') { ST = { trips: m.state.trips }; ensureTrip(); render(); }
-  else if (m.type === 'state') { ST = { trips: m.trips }; ensureTrip(); render(); }
-  else if (m.type === 'presence') { PRESENCE = m.users || []; renderPresence(); }
-  else if (m.type === 'event') { toast(m.text); }
-};
-WS.onclose = () => toast('连接已断开，正在重连…');
+let WS;
+function mutate(action, payload) { if (WS && WS.readyState === 1) WS.send(JSON.stringify({ type: 'mutate', action, payload, actor: ME.name })); }
+function connect() {
+  WS = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  WS.onopen = () => WS.send(JSON.stringify({ type: 'hello', name: ME.name, color: ME.color }));
+  WS.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.type === 'welcome') { ST = { trips: m.state.trips }; ensureTrip(); render(); }
+    else if (m.type === 'state') { ST = { trips: m.trips }; ensureTrip(); render(); }
+    else if (m.type === 'presence') { PRESENCE = m.users || []; renderPresence(); }
+    else if (m.type === 'event') { toast(m.text); }
+  };
+  WS.onclose = () => { toast('连接已断开，正在重连…'); setTimeout(connect, 2000); };
+}
+connect();
 
 /* ---------------- selectors ---------------- */
 function trip() { return ST.trips.find(t => t.id === UI.tripId); }
