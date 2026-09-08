@@ -59,6 +59,40 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+/* GCJ-02 (高德火星坐标) -> WGS-84。高德返回的是 GCJ-02，而地图底图为 OSM(WGS-84)，
+   不做转换直接画会出现明显偏移。此函数把高德坐标对齐到底图。 */
+function outOfChina(lng, lat) {
+  return !(lng > 73.66 && lng < 135.05 && lat > 3.86 && lat < 53.55);
+}
+function transformLatGCJ(x, y) {
+  let ret = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  ret += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+  ret += (20 * Math.sin(y * Math.PI) + 40 * Math.sin(y / 3 * Math.PI)) * 2 / 3;
+  ret += (160 * Math.sin(y / 12 * Math.PI) + 320 * Math.sin(y * Math.PI / 30)) * 2 / 3;
+  return ret;
+}
+function transformLngGCJ(x, y) {
+  let ret = 300 + x + 2 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  ret += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+  ret += (20 * Math.sin(x * Math.PI) + 40 * Math.sin(x / 3 * Math.PI)) * 2 / 3;
+  ret += (150 * Math.sin(x / 12 * Math.PI) + 300 * Math.sin(x / 30 * Math.PI)) * 2 / 3;
+  return ret;
+}
+function gcj2wgs(lng, lat) {
+  if (outOfChina(lng, lat)) return [lng, lat];
+  const a = 6378245.0, ee = 0.00669342162296594323;
+  let dlat = transformLatGCJ(lng - 105.0, lat - 35.0);
+  let dlng = transformLngGCJ(lng - 105.0, lat - 35.0);
+  const radlat = lat / 180.0 * Math.PI;
+  let magic = Math.sin(radlat);
+  magic = 1 - ee * magic * magic;
+  const sqrtmagic = Math.sqrt(magic);
+  dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * Math.PI);
+  dlng = (dlng * 180.0) / (a / sqrtmagic * Math.cos(radlat) * Math.PI);
+  const mglat = lat + dlat, mglng = lng + dlng;
+  return [lng * 2 - mglng, lat * 2 - mglat];
+}
+
 function normalizeStop(s) {
   return {
     id: s.id || id(),
@@ -224,69 +258,92 @@ function readBody(req) {
 }
 
 async function geocode(q) {
-  if (!q) return { results: [] };
+  if (!q) return { results: [], engine: null };
+  // 高德优先（返回 GCJ-02，需转 WGS-84 对齐底图）；失败自动降级 Photon
   if (AMAP_KEY) {
-    const u = `https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(q)}&key=${AMAP_KEY}`;
-    const r = await fetch(u); const j = await r.json();
-    if (j.status === '1' && j.geocodes && j.geocodes.length) {
-      const g = j.geocodes[0]; const [lng, lat] = g.location.split(',').map(Number);
-      return { results: [{ lng, lat, formatted: g.formatted_address }] };
-    }
-    return { results: [] };
+    try {
+      const u = `https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(q)}&key=${AMAP_KEY}`;
+      const r = await fetch(u); const j = await r.json();
+      if (j.status === '1' && j.geocodes && j.geocodes.length) {
+        const g = j.geocodes[0];
+        const [glng, glat] = g.location.split(',').map(Number);
+        const [lng, lat] = gcj2wgs(glng, glat);
+        return { results: [{ lng, lat, formatted: g.formatted_address }], engine: 'amap' };
+      }
+    } catch (e) { /* fall through to Photon */ }
   }
-  const u = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`;
-  const r = await fetch(u, { headers: { 'User-Agent': 'travel-planner/1.0' } });
-  const j = await r.json();
-  const feats = (j && j.features) || [];
-  return {
-    results: feats.map(f => {
-      const c = f.geometry.coordinates;
-      const p = f.properties || {};
-      const parts = [p.name, p.district, p.city, p.state, p.country].filter(Boolean);
-      return { lng: Number(c[0]), lat: Number(c[1]), formatted: parts.join(', ') };
-    })
-  };
+  // Photon (OSM) dev fallback：返回 WGS-84，无需转换
+  try {
+    const u = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`;
+    const r = await fetch(u, { headers: { 'User-Agent': 'travel-planner/1.0' } });
+    const j = await r.json();
+    const feats = (j && j.features) || [];
+    return {
+      engine: 'photon',
+      results: feats.map(f => {
+        const c = f.geometry.coordinates;
+        const p = f.properties || {};
+        const parts = [p.name, p.district, p.city, p.state, p.country].filter(Boolean);
+        return { lng: Number(c[0]), lat: Number(c[1]), formatted: parts.join(', ') };
+      })
+    };
+  } catch (e) {
+    return { results: [], engine: 'photon', error: 'geocode service unreachable' };
+  }
 }
 
 function decodeAMAP(str) {
   const coords = []; let index = 0, lat = 0, lng = 0;
   while (index < str.length) {
-    let result = 1, shift = 0, b;
-    do { b = str.charCodeAt(index++) - 63 - 1; result += b << shift; shift += 5; } while (b >= 0x1f);
+    let result = 0, shift = 0, b;
+    do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
     lat += (result & 1) ? ~(result >> 1) : (result >> 1);
-    result = 1; shift = 0;
-    do { b = str.charCodeAt(index++) - 63 - 1; result += b << shift; shift += 5; } while (b >= 0x1f);
+    result = 0; shift = 0;
+    do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
     lng += (result & 1) ? ~(result >> 1) : (result >> 1);
-    coords.push([lat / 1e5, lng / 1e5]);
+    coords.push([lat / 1e5, lng / 1e5]); // [lat, lng] in GCJ-02
   }
   return coords;
 }
 
 async function route(from, to, mode) {
   if (!from || !to || from.lat == null || to.lat == null) throw new Error('invalid coords');
-  if (AMAP_KEY && (mode === 'driving' || mode === 'walking' || mode === 'transit')) {
-    const am = mode === 'walking' ? 'walking' : mode === 'transit' ? 'transit' : 'driving';
-    const u = `https://restapi.amap.com/v3/direction/${am}?origin=${from.lat},${from.lng}&destination=${to.lat},${to.lng}&key=${AMAP_KEY}`;
-    const r = await fetch(u); const j = await r.json();
-    if (j.status === '1' && j.route && j.route.paths && j.route.paths[0]) {
-      const path = j.route.paths[0];
-      let coords = [];
-      path.steps.forEach(s => { if (s.polyline) coords = coords.concat(decodeAMAP(s.polyline)); });
-      return { mode, coords, distanceMeters: Number(path.distance), durationSec: Number(path.duration) };
-    }
-    throw new Error(j.info || 'amap route failed');
+  // 高铁/飞机：无公开道路线，直接画两站直线 + 距离（标签在前端显示）
+  if (mode === 'rail' || mode === 'flight') {
+    return { mode, coords: [[from.lat, from.lng], [to.lat, to.lng]], distanceMeters: haversine(from, to) * 1000, durationSec: null, straight: true };
   }
-  // OSRM dev fallback (road geometry) for driving/walking; transit -> driving
+  // 有高德 Key 且为驾车/步行：走高德真实道路线（GCJ-02 -> WGS-84），失败降级 OSRM
+  if (AMAP_KEY && (mode === 'driving' || mode === 'walking')) {
+    const svc = mode === 'walking' ? 'walking' : 'driving';
+    const u = `https://restapi.amap.com/v3/direction/${svc}?origin=${from.lat},${from.lng}&destination=${to.lat},${to.lng}&key=${AMAP_KEY}&extensions=base`;
+    try {
+      const r = await fetch(u); const j = await r.json();
+      if (j.status === '1' && j.route && j.route.paths && j.route.paths[0]) {
+        const path = j.route.paths[0];
+        let coords = [];
+        (path.steps || []).forEach(s => {
+          if (!s.polyline) return;
+          decodeAMAP(s.polyline).forEach(p => {
+            const [wLng, wLat] = gcj2wgs(p[1], p[0]); // p = [lat, lng] in GCJ-02
+            coords.push([wLat, wLng]);
+          });
+        });
+        if (coords.length < 2) coords = [[from.lat, from.lng], [to.lat, to.lng]];
+        return { mode, coords, distanceMeters: Number(path.distance), durationSec: Number(path.duration), engine: 'amap' };
+      }
+    } catch (e) { /* fall through to OSRM */ }
+  }
+  // OSRM fallback（免费道路线）：driving/walking/transit 均按道路近似
   const profile = mode === 'walking' ? 'walking' : 'driving';
   const u = `https://router.project-osrm.org/route/v1/${profile}/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
   try {
     const r = await fetch(u); const j = await r.json();
     if (j.code === 'Ok' && j.routes && j.routes[0]) {
       const coords = j.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-      return { mode, coords, distanceMeters: j.routes[0].distance, durationSec: j.routes[0].duration };
+      return { mode, coords, distanceMeters: j.routes[0].distance, durationSec: j.routes[0].duration, engine: AMAP_KEY ? 'osrm-fallback' : 'osrm' };
     }
   } catch (e) { /* fall through to straight line */ }
-  return { mode, coords: [[from.lat, from.lng], [to.lat, to.lng]], distanceMeters: haversine(from, to) * 1000, durationSec: null };
+  return { mode, coords: [[from.lat, from.lng], [to.lat, to.lng]], distanceMeters: haversine(from, to) * 1000, durationSec: null, straight: true };
 }
 
 function apiHandler(req, res, u) {
