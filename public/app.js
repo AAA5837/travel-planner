@@ -428,4 +428,10 @@ function toast(text) {
 
 /* boot */
 initMap();
+fetch('/api/health').then(r => r.json()).then(j => {
+  const b = document.getElementById('engineBadge');
+  if (!b) return;
+  if (j.amap) { b.textContent = '🗺 路线引擎：高德（导航级）'; b.className = 'engine-badge amap'; }
+  else { b.textContent = '🗺 路线引擎：免费方案（设高德 Key 可升级）'; b.className = 'engine-badge free'; }
+}).catch(() => { const b = document.getElementById('engineBadge'); if (b) { b.textContent = '🗺 路线引擎：未知'; b.className = 'engine-badge free'; } });
 toast('正在连接协作服务…');
