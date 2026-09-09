@@ -55,7 +55,17 @@ AMAP_KEY=你的高德Key npm start
 
 ---
 
-## 四、部署到 Render（永久公网地址 · 推荐）
+## 四、部署到 Vercel（免费 · 不用信用卡）
+
+1. 注册/登录 Vercel（https://vercel.com）并用 GitHub 授权。
+2. Add New → Project → 选择 `AAA5837/travel-planner` 仓库。
+3. 在 Environment Variables 里填入 `UPSTASH_REDIS_REST_URL` 和 `UPSTASH_REDIS_REST_TOKEN`（从 Upstash 免费 Redis 获取）。
+4. 可选：填 `AMAP_KEY` 启用高德导航级路线。
+5. Deploy 后得到 `https://<项目名>.vercel.app` 永久地址。
+
+> 说明：Vercel Hobby 免费计划不支持 WebSocket 长连接，因此实时同步改用前端每 8 秒轮询，两人协作体验几乎无差。
+
+## 五、部署到 Render（永久公网地址 · 推荐）
 
 > 前提：代码必须先在一个 **GitHub 仓库** 里（Render 从 Git 拉取，不支持直接上传文件夹）。你需要一个 GitHub 账号 + 一个 Render 账号，均为免费。
 
@@ -81,7 +91,7 @@ AMAP_KEY=你的高德Key npm start
 
 ---
 
-## 五、数据存储、备份与恢复
+## 六、数据存储、备份与恢复
 
 - 所有行程存在 `data/db.json`（JSON 文件），修改即时落盘。
 - **⚠️ 重要：Render / Railway 免费实例的磁盘是临时的**，每次重新部署或实例重建都会清空 `data/`，行程数据会丢。两种应对方式（推荐组合使用）：
@@ -91,7 +101,7 @@ AMAP_KEY=你的高德Key npm start
 
 ---
 
-## 六、给协作者的一句话上手
+## 七、给协作者的一句话上手
 
 1. 打开链接 → 点右上角「改名」填你的昵称；
 2. 用顶部搜索框加地点，或点「📍 地图选点添加」在地图上打点；
@@ -100,3 +110,4 @@ AMAP_KEY=你的高德Key npm start
 5. 在站点/当天的「详情」里贴图、加小红书链接、留言讨论。
 
 两人看到的画面完全实时同步。玩得开心 🧭
+
