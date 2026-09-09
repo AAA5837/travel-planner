@@ -33,29 +33,49 @@ let PRESENCE = [];
 let UI = { tripId: null, view: 'all', activeDayId: null, expandedDays: {}, expandedStops: {}, pickMode: false, focusStopId: null, scrollStopId: null };
 
 function loadMe() {
-  try { const m = JSON.parse(localStorage.getItem('tp_me') || 'null'); if (m && m.name) return m; } catch (e) { }
+  try {
+    const m = JSON.parse(localStorage.getItem('tp_me') || 'null');
+    if (m && m.name && m.id) return m;
+  } catch (e) { }
   const colors = DAY_PALETTE; const c = colors[Math.floor(Math.random() * colors.length)];
-  return { id: null, name: '旅伴' + Math.floor(Math.random() * 90 + 10), color: c };
+  return { id: 'u' + Math.random().toString(36).slice(2, 10), name: '旅伴' + Math.floor(Math.random() * 90 + 10), color: c };
 }
 let ME = loadMe();
 function saveMe() { localStorage.setItem('tp_me', JSON.stringify(ME)); }
 
-/* ---------------- websocket ---------------- */
-let WS;
-function mutate(action, payload) { if (WS && WS.readyState === 1) WS.send(JSON.stringify({ type: 'mutate', action, payload, actor: ME.name })); }
-function connect() {
-  WS = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  WS.onopen = () => WS.send(JSON.stringify({ type: 'hello', name: ME.name, color: ME.color }));
-  WS.onmessage = (e) => {
-    let m; try { m = JSON.parse(e.data); } catch { return; }
-    if (m.type === 'welcome') { ST = { trips: m.state.trips }; ensureTrip(); render(); }
-    else if (m.type === 'state') { ST = { trips: m.trips }; ensureTrip(); render(); }
-    else if (m.type === 'presence') { PRESENCE = m.users || []; renderPresence(); }
-    else if (m.type === 'event') { toast(m.text); }
-  };
-  WS.onclose = () => { toast('连接已断开，正在重连…'); setTimeout(connect, 2000); };
+/* ---------------- sync (polling instead of WebSocket) ---------------- */
+/* Vercel serverless 不支持长连接 WebSocket，这里用短轮询拉取实现"准实时"同步：
+   每 8 秒拉一次全量状态 + 在线列表 + 新事件；本地操作走 /api/mutate 即时落库并返回新状态。 */
+let lastEventTs = 0;
+function noteEvent(ev) { if (!ev || ev.ts <= lastEventTs) return; lastEventTs = ev.ts; toast(ev.text); }
+function mutate(action, payload) {
+  fetch('/api/mutate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, payload, actor: ME.name, me: { id: ME.id, name: ME.name, color: ME.color } })
+  })
+    .then(r => r.json()).then(j => {
+      if (j.ok) {
+        ST = { trips: j.state.trips }; ensureTrip(); render();
+        if (j.event) noteEvent(j.event);
+      } else { toast('操作失败，请重试'); }
+    })
+    .catch(() => toast('操作失败（网络）'));
 }
-connect();
+let polling = false;
+function poll() {
+  if (polling) return; polling = true;
+  fetch('/api/state?me=' + encodeURIComponent(ME.id) + '&name=' + encodeURIComponent(ME.name) + '&color=' + encodeURIComponent(ME.color) + '&since=' + lastEventTs)
+    .then(r => r.json()).then(j => {
+      PRESENCE = j.presence || []; renderPresence();
+      (j.events || []).forEach(noteEvent);
+      const incoming = j.state && j.state.trips;
+      if (incoming && JSON.stringify(incoming) !== JSON.stringify(ST.trips)) {
+        ST = { trips: incoming }; ensureTrip(); render();
+      }
+    })
+    .catch(() => {})
+    .finally(() => { polling = false; });
+}
 
 /* ---------------- selectors ---------------- */
 function trip() { return ST.trips.find(t => t.id === UI.tripId); }
@@ -362,7 +382,7 @@ panel.addEventListener('change', (e) => {
 document.getElementById('tripSelect').addEventListener('change', e => { UI.tripId = e.target.value; ensureTrip(); render(); });
 document.getElementById('newTrip').addEventListener('click', () => { const name = prompt('旅行名称：', '我的旅行'); if (name) mutate('trip.create', { name }); });
 document.getElementById('delTrip').addEventListener('click', () => { if (confirm('确定删除当前整个旅行？')) mutate('trip.delete', { tripId: UI.tripId }); });
-document.getElementById('editName').addEventListener('click', () => { const n = prompt('你的昵称（会显示给旅伴）：', ME.name); if (n) { ME.name = n.slice(0, 20); saveMe(); WS.send(JSON.stringify({ type: 'hello', name: ME.name, color: ME.color })); renderPresence(); renderTopbar(); } });
+document.getElementById('editName').addEventListener('click', () => { const n = prompt('你的昵称（会显示给旅伴）：', ME.name); if (n) { ME.name = n.slice(0, 20); saveMe(); renderPresence(); renderTopbar(); } });
 document.getElementById('viewSeg').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (!b) return; UI.view = b.dataset.view; if (UI.view !== 'all') UI.activeDayId = UI.view; render(); });
 document.getElementById('addDaySelect').addEventListener('change', e => { UI.activeDayId = e.target.value; });
 document.getElementById('pickBtn').addEventListener('click', () => { UI.pickMode = !UI.pickMode; document.getElementById('pickBtn').classList.toggle('active', UI.pickMode); toast(UI.pickMode ? '选点模式：点击地图添加站点' : '已退出选点模式'); });
@@ -434,4 +454,6 @@ fetch('/api/health').then(r => r.json()).then(j => {
   if (j.amap) { b.textContent = '🗺 路线引擎：高德（导航级）'; b.className = 'engine-badge amap'; }
   else { b.textContent = '🗺 路线引擎：免费方案（设高德 Key 可升级）'; b.className = 'engine-badge free'; }
 }).catch(() => { const b = document.getElementById('engineBadge'); if (b) { b.textContent = '🗺 路线引擎：未知'; b.className = 'engine-badge free'; } });
-toast('正在连接协作服务…');
+poll();
+setInterval(poll, 8000);
+toast('正在同步行程…');
