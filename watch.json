@@ -1,0 +1,9 @@
+{
+  "restart": {
+    "exclude": [
+      "^data/",
+      ".*\\.log$"
+    ]
+  },
+  "throttle": 90000
+}
